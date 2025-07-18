@@ -40,20 +40,22 @@
 
         <!-- Image Upload Section -->
         <div class="w-full">
-            <label for="imageUpload" class="block text-gray-700 text-sm font-semibold mb-2">Upload up to 3 Images (e.g., QR Codes):</label>
+            <label for="imageUpload" class="block text-gray-700 text-sm font-semibold mb-2">Add up to 3 Images:</label>
             <label for="imageUpload" class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-300 ease-in-out block text-center">
-                Choose Images
+                Add Images
             </label>
             <input type="file" id="imageUpload" accept="image/*" multiple class="hidden">
-            <div id="imagePreviews" class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <!-- Image previews will be dynamically added here -->
-            </div>
+        </div>
+
+        <!-- Image Previews -->
+        <div id="imagePreviews" class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+            <!-- Image previews will be dynamically added here -->
         </div>
 
         <!-- Text Input Section -->
         <div class="w-full">
             <label for="overlayText" class="block text-gray-700 text-sm font-semibold mb-2">Text to Overlay:</label>
-            <textarea id="overlayText" rows="4" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 ease-in-out">You seem really nice. I'd love to connect, no pressure!</textarea>
+            <textarea id="overlayText" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 ease-in-out">You seem really nice. I'd love to connect, no pressure!</textarea>
 
             <!-- Font Size Control -->
             <div class="mt-4">
@@ -74,11 +76,6 @@
                     <option value="Impact, sans-serif">Impact</option>
                     <option value="Comic Sans MS, cursive">Comic Sans MS</option>
                 </select>
-            </div>
-
-
-            <div id="loadingIndicator" class="hidden mt-2 text-center text-gray-600">
-                Generating text...
             </div>
         </div>
 
@@ -105,10 +102,9 @@
         const imagePreviews = document.getElementById('imagePreviews');
         const messageBox = document.getElementById('messageBox');
         const messageText = document.getElementById('messageText');
-        const loadingIndicator = document.getElementById('loadingIndicator');
         const fontSizeSlider = document.getElementById('fontSizeSlider');
         const fontSizeValueSpan = document.getElementById('fontSizeValue');
-        const fontSelect = document.getElementById('fontSelect'); // New font select element
+        const fontSelect = document.getElementById('fontSelect');
         const ctx = imageCanvas.getContext('2d');
 
         let loadedImages = []; // Array to store loaded image objects
@@ -129,16 +125,6 @@
             setTimeout(() => {
                 messageBox.classList.add('hidden');
             }, 5000); // Hide after 5 seconds
-        }
-
-        // Function to convert an Image object to a base64 string (PNG format)
-        function getImageBase64(img) {
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCanvas.width = img.width;
-            tempCanvas.height = img.height;
-            tempCtx.drawImage(img, 0, 0);
-            return tempCanvas.toDataURL('image/png').split(',')[1]; // Get base64 data part
         }
 
         // Function to wrap text based on a maximum width
@@ -166,6 +152,30 @@
             }
             lines.push(currentLine);
             return lines;
+        }
+
+        // Function to add an image
+        function addImageToCanvas(img) {
+            // Check limit before adding
+            if (loadedImages.length >= 3) {
+                showMessage('You can only add a maximum of 3 images.', 'warning');
+                return false; // Indicate failure to add
+            }
+
+            loadedImages.push(img);
+
+            // Create image preview
+            const previewDiv = document.createElement('div');
+            previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center';
+            const previewImg = document.createElement('img');
+            previewImg.src = img.src; // Use img.src directly for preview
+            previewImg.alt = 'Image preview';
+            previewImg.className = 'max-w-full max-h-full object-contain rounded-lg';
+            previewDiv.appendChild(previewImg);
+            imagePreviews.appendChild(previewDiv);
+
+            drawCanvas(); // Redraw canvas with new image
+            return true; // Indicate success
         }
 
         // Function to draw images and text on the canvas
@@ -225,7 +235,7 @@
 
             // Draw the overlay text
             ctx.font = TEXT_FONT_STYLE; // Ensure font is set again before drawing
-            ctx.fillStyle = '#333333'; // Darker text color
+            ctx.fillStyle = 'black'; // Darker text color
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top'; // Align text to the top of the line
 
@@ -243,62 +253,39 @@
                 ctx.drawImage(item.img, currentImageX, imagesYStart, item.width, totalImagesHeight);
                 currentImageX += item.width;
             });
-
         }
 
-        // Handle image file selection
+        // Handle local image file selection
         imageUpload.addEventListener('change', (event) => {
-            loadedImages = []; // Clear previous images
-            imagePreviews.innerHTML = ''; // Clear previous previews
-
             const files = Array.from(event.target.files);
+            let filesAddedCount = 0;
 
             if (files.length === 0) {
-                showMessage('No files selected.', 'info');
-                drawCanvas(); // Redraw with no images
+                showMessage('No local files selected.', 'info');
                 return;
             }
 
-            if (files.length > 3) {
-                showMessage('Please select a maximum of 3 images.', 'error');
-                // Clear the input to prevent re-uploading too many files
-                imageUpload.value = '';
-                drawCanvas(); // Redraw with no images
+            // Check if adding these files would exceed the limit
+            if (loadedImages.length + files.length > 3) {
+                showMessage(`You can only add ${3 - loadedImages.length} more image(s).`, 'error');
+                imageUpload.value = ''; // Clear the input
                 return;
             }
 
-            let imagesLoadedCount = 0;
             files.forEach(file => {
                 const reader = new FileReader();
-
                 reader.onload = (e) => {
                     const img = new Image();
                     img.onload = () => {
-                        loadedImages.push(img);
-                        imagesLoadedCount++;
-
-                        // Create image preview
-                        const previewDiv = document.createElement('div');
-                        previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center';
-                        const previewImg = document.createElement('img');
-                        previewImg.src = e.target.result;
-                        previewImg.alt = 'Image preview';
-                        previewImg.className = 'max-w-full max-h-full object-contain rounded-lg';
-                        previewDiv.appendChild(previewImg);
-                        imagePreviews.appendChild(previewDiv);
-
-                        // Once all images are loaded, draw them on the canvas
-                        if (imagesLoadedCount === files.length) {
-                            // Sort images by their original order of selection
-                            // (FileReader.onload can complete out of order)
-                            loadedImages.sort((a, b) => files.indexOf(a.file) - files.indexOf(b.file));
-                            drawCanvas();
+                        if (addImageToCanvas(img)) { // Only add if limit allows
+                            filesAddedCount++;
+                            // No need to sort here, addImageToCanvas redraws
                         }
                     };
                     img.onerror = () => {
                         showMessage(`Could not load image: ${file.name}`, 'error');
                     };
-                    img.file = file; // Store file reference for sorting
+                    img.file = file; // Store file reference if needed later
                     img.src = e.target.result;
                 };
                 reader.onerror = () => {
@@ -306,6 +293,7 @@
                 };
                 reader.readAsDataURL(file);
             });
+            imageUpload.value = ''; // Clear the input after processing files
         });
 
         // Redraw canvas when text changes
@@ -314,7 +302,7 @@
         // Redraw canvas when font size slider changes
         fontSizeSlider.addEventListener('input', drawCanvas);
 
-        // New: Redraw canvas when font selection changes
+        // Redraw canvas when font selection changes
         fontSelect.addEventListener('change', drawCanvas);
 
         // Export combined image
@@ -336,7 +324,7 @@
 
                 const downloadLink = document.createElement('a');
                 downloadLink.href = imageURL;
-                downloadLink.download = 'QR_Note.png'; // Suggested filename
+                downloadLink.download = 'qr_note.png'; // Suggested filename
                 document.body.appendChild(downloadLink);
                 downloadLink.click();
                 document.body.removeChild(downloadLink);
