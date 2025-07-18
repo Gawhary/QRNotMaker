@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Note maker</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the Inter font and overall body */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        /* Canvas styling */
+        canvas {
+            border: 2px solid #e2e8f0; /* Light border for the canvas */
+            background-color: #ffffff; /* White background for canvas */
+            border-radius: 0.5rem; /* Rounded corners */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            max-width: 100%; /* Ensure canvas is responsive, but its internal drawing is fixed width */
+            height: auto; /* Maintain aspect ratio */
+            display: block; /* Remove extra space below canvas */
+        }
+        /* Hide the default file input button */
+        input[type="file"] {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl flex flex-col items-center space-y-6">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4 text-center">QR Note Maker</h1>
+
+        <!-- Image Upload Section -->
+        <div class="w-full">
+            <label for="imageUpload" class="block text-gray-700 text-sm font-semibold mb-2">Upload up to 3 Images (e.g., QR Codes):</label>
+            <label for="imageUpload" class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-300 ease-in-out block text-center">
+                Choose Images
+            </label>
+            <input type="file" id="imageUpload" accept="image/*" multiple class="hidden">
+            <div id="imagePreviews" class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Image previews will be dynamically added here -->
+            </div>
+        </div>
+
+        <!-- Text Input Section -->
+        <div class="w-full">
+            <label for="overlayText" class="block text-gray-700 text-sm font-semibold mb-2">Text to Overlay:</label>
+            <textarea id="overlayText" rows="4" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 ease-in-out">You seem really nice. I'd love to connect, no pressure!</textarea>
+
+            <!-- Font Size Control -->
+            <div class="mt-4">
+                <label for="fontSizeSlider" class="block text-gray-700 text-sm font-semibold mb-2">Font Size: <span id="fontSizeValue">40</span>px</label>
+                <input type="range" id="fontSizeSlider" min="20" max="80" value="40" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+            </div>
+
+            <!-- Font Selection Dropdown -->
+            <div class="mt-4">
+                <label for="fontSelect" class="block text-gray-700 text-sm font-semibold mb-2">Select Font:</label>
+                <select id="fontSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 ease-in-out">
+                    <option value="Inter, sans-serif">Inter (Default)</option>
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="Verdana, sans-serif">Verdana</option>
+                    <option value="Georgia, serif">Georgia</option>
+                    <option value="Times New Roman, serif">Times New Roman</option>
+                    <option value="Courier New, monospace">Courier New</option>
+                    <option value="Impact, sans-serif">Impact</option>
+                    <option value="Comic Sans MS, cursive">Comic Sans MS</option>
+                </select>
+            </div>
+
+
+            <div id="loadingIndicator" class="hidden mt-2 text-center text-gray-600">
+                Generating text...
+            </div>
+        </div>
+
+        <!-- Canvas for Image Combination -->
+        <canvas id="imageCanvas" class="w-full h-auto rounded-lg shadow-md"></canvas>
+
+        <!-- Export Button -->
+        <button id="exportButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
+            Export Combined Image
+        </button>
+
+        <!-- Message Box for Feedback -->
+        <div id="messageBox" class="hidden bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-lg relative w-full" role="alert">
+            <strong class="font-bold">Info:</strong>
+            <span class="block sm:inline" id="messageText"></span>
+        </div>
+    </div>
+
+    <script>
+        const imageUpload = document.getElementById('imageUpload');
+        const overlayText = document.getElementById('overlayText');
+        const imageCanvas = document.getElementById('imageCanvas');
+        const exportButton = document.getElementById('exportButton');
+        const imagePreviews = document.getElementById('imagePreviews');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const fontSizeSlider = document.getElementById('fontSizeSlider');
+        const fontSizeValueSpan = document.getElementById('fontSizeValue');
+        const fontSelect = document.getElementById('fontSelect'); // New font select element
+        const ctx = imageCanvas.getContext('2d');
+
+        let loadedImages = []; // Array to store loaded image objects
+
+        // Fixed width for the canvas, simulating a 6cm roll (approx 100px/cm)
+        const FIXED_CANVAS_WIDTH = 600;
+        // Padding for the text at the top and bottom of the text area
+        const TEXT_TOP_PADDING = 0;
+        const TEXT_BOTTOM_PADDING = 0; // Space between text and images
+        const TEXT_LINE_HEIGHT_FACTOR = 1; // Factor for line height (e.g., 1.2 * font size)
+        const TEXT_HORIZONTAL_PADDING = 0; // Padding from left/right edges for text
+
+        // Function to show messages to the user
+        function showMessage(message, type = 'info') {
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden');
+            messageBox.className = `bg-${type}-100 border border-${type}-400 text-${type}-700 px-4 py-3 rounded-lg relative w-full`;
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 5000); // Hide after 5 seconds
+        }
+
+        // Function to convert an Image object to a base64 string (PNG format)
+        function getImageBase64(img) {
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            tempCtx.drawImage(img, 0, 0);
+            return tempCanvas.toDataURL('image/png').split(',')[1]; // Get base64 data part
+        }
+
+        // Function to wrap text based on a maximum width
+        function wrapText(context, text, maxWidth) {
+            const words = text.split(' ');
+            let lines = [];
+            let currentLine = words[0];
+
+            if (!text) { // Handle empty text
+                return [''];
+            }
+
+            for (let i = 1; i < words.length; i++) {
+                const word = words[i];
+                const testLine = currentLine + ' ' + word;
+                const metrics = context.measureText(testLine);
+                const testWidth = metrics.width;
+
+                if (testWidth > maxWidth && i > 0) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            lines.push(currentLine);
+            return lines;
+        }
+
+        // Function to draw images and text on the canvas
+        function drawCanvas() {
+            // Get current font size from slider
+            const currentFontSize = parseInt(fontSizeSlider.value);
+            fontSizeValueSpan.textContent = currentFontSize; // Update displayed value
+
+            // Get current font family from dropdown
+            const selectedFontFamily = fontSelect.value;
+
+            // Set fixed canvas width
+            imageCanvas.width = FIXED_CANVAS_WIDTH;
+
+            // Set font for text measurement using the current font size and family
+            const TEXT_FONT_STYLE = `bold ${currentFontSize}px ${selectedFontFamily}`;
+            ctx.font = TEXT_FONT_STYLE;
+
+            const textToDraw = overlayText.value.trim();
+            const maxTextWidth = FIXED_CANVAS_WIDTH - (2 * TEXT_HORIZONTAL_PADDING);
+            const textLines = wrapText(ctx, textToDraw, maxTextWidth);
+
+            const lineHeight = currentFontSize * TEXT_LINE_HEIGHT_FACTOR;
+            const totalTextHeight = (textLines.length * lineHeight);
+            const totalTextSectionHeight = totalTextHeight + TEXT_TOP_PADDING + TEXT_BOTTOM_PADDING;
+
+            let totalImagesHeight = 0;
+            let currentX = 0;
+
+            // Calculate scaled image dimensions
+            const scaledImages = [];
+            if (loadedImages.length > 0) {
+                const targetImageWidthPerImage = FIXED_CANVAS_WIDTH / loadedImages.length;
+                let maxScaledImageHeight = 0;
+
+                loadedImages.forEach(img => {
+                    const aspectRatio = img.width / img.height;
+                    let scaledWidth = targetImageWidthPerImage;
+                    let scaledHeight = scaledWidth / aspectRatio;
+
+                    scaledImages.push({ img: img, width: scaledWidth, height: scaledHeight });
+                    if (scaledHeight > maxScaledImageHeight) {
+                        maxScaledImageHeight = scaledHeight;
+                    }
+                });
+                totalImagesHeight = maxScaledImageHeight; // All images will be scaled to this max height
+            }
+
+            // Set canvas height based on text and images
+            imageCanvas.height = totalTextSectionHeight + totalImagesHeight;
+
+            // Clear the canvas before redrawing
+            ctx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
+            // Fill background of the canvas with white
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
+
+            // Draw the overlay text
+            ctx.font = TEXT_FONT_STYLE; // Ensure font is set again before drawing
+            ctx.fillStyle = '#333333'; // Darker text color
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top'; // Align text to the top of the line
+
+            let currentTextY = TEXT_TOP_PADDING;
+            textLines.forEach(line => {
+                ctx.fillText(line, imageCanvas.width / 2, currentTextY);
+                currentTextY += lineHeight;
+            });
+
+            // Draw images below the text
+            let currentImageX = 0;
+            const imagesYStart = totalTextSectionHeight; // Y position where images start
+            scaledImages.forEach(item => {
+                // Draw each image side by side, scaled to fit
+                ctx.drawImage(item.img, currentImageX, imagesYStart, item.width, totalImagesHeight);
+                currentImageX += item.width;
+            });
+
+        }
+
+        // Handle image file selection
+        imageUpload.addEventListener('change', (event) => {
+            loadedImages = []; // Clear previous images
+            imagePreviews.innerHTML = ''; // Clear previous previews
+
+            const files = Array.from(event.target.files);
+
+            if (files.length === 0) {
+                showMessage('No files selected.', 'info');
+                drawCanvas(); // Redraw with no images
+                return;
+            }
+
+            if (files.length > 3) {
+                showMessage('Please select a maximum of 3 images.', 'error');
+                // Clear the input to prevent re-uploading too many files
+                imageUpload.value = '';
+                drawCanvas(); // Redraw with no images
+                return;
+            }
+
+            let imagesLoadedCount = 0;
+            files.forEach(file => {
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        loadedImages.push(img);
+                        imagesLoadedCount++;
+
+                        // Create image preview
+                        const previewDiv = document.createElement('div');
+                        previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center';
+                        const previewImg = document.createElement('img');
+                        previewImg.src = e.target.result;
+                        previewImg.alt = 'Image preview';
+                        previewImg.className = 'max-w-full max-h-full object-contain rounded-lg';
+                        previewDiv.appendChild(previewImg);
+                        imagePreviews.appendChild(previewDiv);
+
+                        // Once all images are loaded, draw them on the canvas
+                        if (imagesLoadedCount === files.length) {
+                            // Sort images by their original order of selection
+                            // (FileReader.onload can complete out of order)
+                            loadedImages.sort((a, b) => files.indexOf(a.file) - files.indexOf(b.file));
+                            drawCanvas();
+                        }
+                    };
+                    img.onerror = () => {
+                        showMessage(`Could not load image: ${file.name}`, 'error');
+                    };
+                    img.file = file; // Store file reference for sorting
+                    img.src = e.target.result;
+                };
+                reader.onerror = () => {
+                    showMessage(`Error reading file: ${file.name}`, 'error');
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        // Redraw canvas when text changes
+        overlayText.addEventListener('input', drawCanvas);
+
+        // Redraw canvas when font size slider changes
+        fontSizeSlider.addEventListener('input', drawCanvas);
+
+        // New: Redraw canvas when font selection changes
+        fontSelect.addEventListener('change', drawCanvas);
+
+        // Export combined image
+        exportButton.addEventListener('click', () => {
+            try {
+                // Create a temporary canvas for export to ensure correct dimensions and content
+                const exportCanvas = document.createElement('canvas');
+                const exportCtx = exportCanvas.getContext('2d');
+
+                // Set export canvas dimensions to match the display canvas
+                exportCanvas.width = imageCanvas.width;
+                exportCanvas.height = imageCanvas.height;
+
+                // Copy the content from the display canvas to the export canvas
+                exportCtx.drawImage(imageCanvas, 0, 0);
+
+                const imageURL = exportCanvas.toDataURL('image/png');
+                console.log('Generated image URL length:', imageURL.length);
+
+                const downloadLink = document.createElement('a');
+                downloadLink.href = imageURL;
+                downloadLink.download = 'QR_Note.png'; // Suggested filename
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+
+                showMessage('Image exported successfully!', 'success');
+            } catch (error) {
+                showMessage(`Error exporting image: ${error.message}`, 'error');
+                console.error('Export error:', error);
+            }
+        });
+
+        // Initial draw on page load
+        window.onload = () => {
+            drawCanvas();
+        };
+
+        // Redraw canvas on window resize to ensure responsiveness (though internal drawing is fixed width)
+        window.addEventListener('resize', drawCanvas);
+    </script>
+</body>
+</html>
