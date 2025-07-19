@@ -317,11 +317,6 @@
 
         // Export combined image
         exportButton.addEventListener('click', () => {
-            if (loadedImages.length === 0) {
-                showMessage('Please upload images first.', 'warning');
-                return;
-            }
-
             try {
                 // Create a temporary canvas for export to ensure correct dimensions and content
                 const exportCanvas = document.createElement('canvas');
