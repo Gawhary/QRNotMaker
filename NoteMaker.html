@@ -115,7 +115,7 @@ No pressure!</textarea>
         // Padding for the text at the top and bottom of the text area
         const TEXT_TOP_PADDING = 0;
         const TEXT_BOTTOM_PADDING = 0; // Space between text and images
-        const TEXT_LINE_HEIGHT_FACTOR = 1; // Factor for line height (e.g., 1.2 * font size)
+        const TEXT_LINE_HEIGHT_FACTOR = 1.1; // Factor for line height (e.g., 1.2 * font size)
         const TEXT_HORIZONTAL_PADDING = 0; // Padding from left/right edges for text
 
         // Function to show messages to the user
@@ -128,31 +128,40 @@ No pressure!</textarea>
             }, 5000); // Hide after 5 seconds
         }
 
-        // Function to wrap text based on a maximum width
+        // Function to wrap text based on a maximum width, now respecting newlines
         function wrapText(context, text, maxWidth) {
-            const words = text.split(' ');
-            let lines = [];
-            let currentLine = words[0];
+            const paragraphs = text.split('\n'); // Split by explicit newlines
+            let allLines = [];
 
             if (!text) { // Handle empty text
                 return [''];
             }
 
-            for (let i = 1; i < words.length; i++) {
-                const word = words[i];
-                const testLine = currentLine + ' ' + word;
-                const metrics = context.measureText(testLine);
-                const testWidth = metrics.width;
+            paragraphs.forEach(paragraph => {
+                const words = paragraph.split(' ');
+                let currentLine = '';
 
-                if (testWidth > maxWidth && i > 0) {
-                    lines.push(currentLine);
-                    currentLine = word;
-                } else {
-                    currentLine = testLine;
+                if (words.length === 0 || (words.length === 1 && words[0] === '')) {
+                    allLines.push(''); // Preserve empty lines from original newlines
+                    return;
                 }
-            }
-            lines.push(currentLine);
-            return lines;
+
+                for (let i = 0; i < words.length; i++) {
+                    const word = words[i];
+                    const testLine = currentLine === '' ? word : currentLine + ' ' + word;
+                    const metrics = context.measureText(testLine);
+                    const testWidth = metrics.width;
+
+                    if (testWidth > maxWidth && i > 0) {
+                        allLines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                allLines.push(currentLine); // Add the last line of the paragraph
+            });
+            return allLines;
         }
 
         // Function to add an image
@@ -308,6 +317,11 @@ No pressure!</textarea>
 
         // Export combined image
         exportButton.addEventListener('click', () => {
+            if (loadedImages.length === 0) {
+                showMessage('Please upload images first.', 'warning');
+                return;
+            }
+
             try {
                 // Create a temporary canvas for export to ensure correct dimensions and content
                 const exportCanvas = document.createElement('canvas');
