@@ -164,7 +164,40 @@
             return allLines;
         }
 
-        // Function to add an image
+        // Helper function to render a single image preview
+        function renderImagePreview(img) {
+            const previewDiv = document.createElement('div');
+            previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center group'; // Added group for hover effects
+            
+            const previewImg = document.createElement('img');
+            previewImg.src = img.src;
+            previewImg.alt = 'Image preview';
+            previewImg.className = 'max-w-full max-h-full object-contain rounded-lg';
+            previewDiv.appendChild(previewImg);
+
+            // Create remove button
+            const removeButton = document.createElement('button');
+            removeButton.className = 'absolute top-1 right-1 bg-red-500 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-200';
+            removeButton.textContent = 'X';
+            removeButton.onclick = (event) => {
+                event.stopPropagation(); // Prevent click from bubbling up
+                removeImage(img);
+            };
+            previewDiv.appendChild(removeButton);
+
+            imagePreviews.appendChild(previewDiv);
+        }
+
+        // Function to remove an image
+        function removeImage(imgToRemove) {
+            loadedImages = loadedImages.filter(img => img !== imgToRemove); // Filter out the image
+            imagePreviews.innerHTML = ''; // Clear all current previews
+            loadedImages.forEach(img => renderImagePreview(img)); // Re-render remaining images
+            drawCanvas(); // Redraw canvas
+            showMessage('Image removed successfully!', 'info');
+        }
+
+        // Function to add an image (from file)
         function addImageToCanvas(img) {
             // Check limit before adding
             if (loadedImages.length >= 3) {
@@ -173,17 +206,7 @@
             }
 
             loadedImages.push(img);
-
-            // Create image preview
-            const previewDiv = document.createElement('div');
-            previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center';
-            const previewImg = document.createElement('img');
-            previewImg.src = img.src; // Use img.src directly for preview
-            previewImg.alt = 'Image preview';
-            previewImg.className = 'max-w-full max-h-full object-contain rounded-lg';
-            previewDiv.appendChild(previewImg);
-            imagePreviews.appendChild(previewDiv);
-
+            renderImagePreview(img); // Render the new image preview
             drawCanvas(); // Redraw canvas with new image
             return true; // Indicate success
         }
@@ -317,7 +340,7 @@
 
         // Export combined image
         exportButton.addEventListener('click', () => {
-            try {
+                        try {
                 // Create a temporary canvas for export to ensure correct dimensions and content
                 const exportCanvas = document.createElement('canvas');
                 const exportCtx = exportCanvas.getContext('2d');
