@@ -113,10 +113,10 @@
         // Fixed width for the canvas, simulating a 6cm roll (approx 100px/cm)
         const FIXED_CANVAS_WIDTH = 3600; // Increased resolution
         // Padding for the text at the top and bottom of the text area
-        const TEXT_TOP_PADDING = 0;
-        const TEXT_BOTTOM_PADDING = 0; // Space between text and images
-        const TEXT_LINE_HEIGHT_FACTOR = 1.1; // Factor for line height (e.g., 1.2 * font size)
-        const TEXT_HORIZONTAL_PADDING = 0; // Padding from left/right edges for text
+        const TEXT_TOP_PADDING = 0; // Kept at 0 as per user's request
+        const TEXT_BOTTOM_PADDING = 0; // Kept at 0 as per user's request
+        const TEXT_LINE_HEIGHT_FACTOR = 1.1; // Kept at 1.1 as per user's request
+        const TEXT_HORIZONTAL_PADDING = 0; // Kept at 0 as per user's request
 
         // Function to show messages to the user
         function showMessage(message, type = 'info') {
@@ -167,7 +167,8 @@
         // Helper function to render a single image preview
         function renderImagePreview(img) {
             const previewDiv = document.createElement('div');
-            previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center group'; // Added group for hover effects
+            // Removed 'group' class as opacity is no longer controlled by hover
+            previewDiv.className = 'relative w-full h-32 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center';
             
             const previewImg = document.createElement('img');
             previewImg.src = img.src;
@@ -177,7 +178,8 @@
 
             // Create remove button
             const removeButton = document.createElement('button');
-            removeButton.className = 'absolute top-1 right-1 bg-red-500 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-200';
+            // Removed opacity-0 and group-hover:opacity-100 to make it always visible
+            removeButton.className = 'absolute top-1 right-1 bg-red-500 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold';
             removeButton.textContent = 'X';
             removeButton.onclick = (event) => {
                 event.stopPropagation(); // Prevent click from bubbling up
@@ -340,7 +342,10 @@
 
         // Export combined image
         exportButton.addEventListener('click', () => {
-                        try {
+            // Removed the condition that prevented export if no images were loaded
+            // Now, it will export text-only if no images are present.
+
+            try {
                 // Create a temporary canvas for export to ensure correct dimensions and content
                 const exportCanvas = document.createElement('canvas');
                 const exportCtx = exportCanvas.getContext('2d');
