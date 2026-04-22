@@ -40,7 +40,7 @@
 
         <!-- Image Upload Section -->
         <div class="w-full">
-            <label for="imageUpload" class="block text-gray-700 text-sm font-semibold mb-2">Add up to 3 Images:</label>
+            <label for="imageUpload" class="block text-gray-700 text-sm font-semibold mb-2">Add Images:</label>
             <label for="imageUpload" class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-300 ease-in-out block text-center">
                 Add Images
             </label>
@@ -78,13 +78,29 @@
                     <option value="Comic Sans MS, cursive">Comic Sans MS</option>
                 </select>
             </div>
-        </div>
 
-        <!-- Canvas for Image Combination -->
-        <canvas id="imageCanvas" class="w-full h-auto rounded-lg shadow-md"></canvas>
+            <!-- QR Placement Option -->
+            <div class="mt-4">
+                <label for="placementSelect" class="block text-gray-700 text-sm font-semibold mb-2">QR Placement:</label>
+                <select id="placementSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 ease-in-out">
+                    <option value="below">Below Text (default)</option>
+                    <option value="right">Right of Text (stacked equal rectangles)</option>
+                </select>
+            </div>
 
-        <!-- Export Button -->
-        <button id="exportButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
+            <!-- Include date/time checkbox -->
+            <div class="mt-4 flex items-center space-x-3">
+                <input type="checkbox" id="showDateTime" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="showDateTime" class="text-gray-700 text-sm font-semibold">Include date & time (bottom-right)</label>
+            </div>
+
+         </div>
+
+         <!-- Canvas for Image Combination -->
+         <canvas id="imageCanvas" class="w-full h-auto rounded-lg shadow-md"></canvas>
+
+         <!-- Export Button -->
+         <button id="exportButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
             Export Combined Image
         </button>
 
@@ -106,9 +122,14 @@
         const fontSizeSlider = document.getElementById('fontSizeSlider');
         const fontSizeValueSpan = document.getElementById('fontSizeValue');
         const fontSelect = document.getElementById('fontSelect');
+        const placementSelect = document.getElementById('placementSelect');
+        const showDateTime = document.getElementById('showDateTime');
         const ctx = imageCanvas.getContext('2d');
 
-        let loadedImages = []; // Array to store loaded image objects
+        if (placementSelect) placementSelect.addEventListener('change', drawCanvas);
+        if (showDateTime) showDateTime.addEventListener('change', drawCanvas);
+        
+         let loadedImages = []; // Array to store loaded image objects
 
         // Fixed width for the canvas, simulating a 6cm roll (approx 100px/cm)
         const FIXED_CANVAS_WIDTH = 3600; // Increased resolution
@@ -201,26 +222,22 @@
 
         // Function to add an image (from file)
         function addImageToCanvas(img) {
-            // Check limit before adding
-            if (loadedImages.length >= 3) {
-                showMessage('You can only add a maximum of 3 images.', 'warning');
-                return false; // Indicate failure to add
-            }
-
+            // No hard limit: allow more than 3 images (QR layout will handle multiple images when placed on the right)
             loadedImages.push(img);
-            renderImagePreview(img); // Render the new image preview
-            drawCanvas(); // Redraw canvas with new image
-            return true; // Indicate success
-        }
+             renderImagePreview(img); // Render the new image preview
+             drawCanvas(); // Redraw canvas with new image
+             return true; // Indicate success
+         }
 
-        // Function to draw images and text on the canvas
-        function drawCanvas() {
+         // Function to draw images and text on the canvas
+         function drawCanvas() {
             // Get current font size from slider
             const currentFontSize = parseInt(fontSizeSlider.value);
             fontSizeValueSpan.textContent = currentFontSize; // Update displayed value
 
             // Get current font family from dropdown
             const selectedFontFamily = fontSelect.value;
+            const placement = placementSelect ? placementSelect.value : 'below';
 
             // Set fixed canvas width
             imageCanvas.width = FIXED_CANVAS_WIDTH;
@@ -230,37 +247,48 @@
             ctx.font = TEXT_FONT_STYLE;
 
             const textToDraw = overlayText.value.trim();
-            const maxTextWidth = FIXED_CANVAS_WIDTH - (2 * TEXT_HORIZONTAL_PADDING);
-            const textLines = wrapText(ctx, textToDraw, maxTextWidth);
-
             const lineHeight = currentFontSize * TEXT_LINE_HEIGHT_FACTOR;
+
+            // When QRs are to the right, reserve a right column and wrap text to the left column.
+            let leftColumnWidth = FIXED_CANVAS_WIDTH;
+            let qrColumnWidth = 0;
+            if (placement === 'right' && loadedImages.length > 0) {
+                // Make QR column width equal to the text box width by splitting canvas into two equal columns
+                leftColumnWidth = Math.floor(FIXED_CANVAS_WIDTH / 2);
+                qrColumnWidth = FIXED_CANVAS_WIDTH - leftColumnWidth;
+            }
+
+            const maxTextWidth = leftColumnWidth - (2 * TEXT_HORIZONTAL_PADDING);
+            const textLines = wrapText(ctx, textToDraw, Math.max(10, maxTextWidth));
             const totalTextHeight = (textLines.length * lineHeight);
             const totalTextSectionHeight = totalTextHeight + TEXT_TOP_PADDING + TEXT_BOTTOM_PADDING;
 
+            // Determine images region height depending on placement
             let totalImagesHeight = 0;
-            let currentX = 0;
-
-            // Calculate scaled image dimensions
-            const scaledImages = [];
-            if (loadedImages.length > 0) {
-                const targetImageWidthPerImage = FIXED_CANVAS_WIDTH / loadedImages.length;
-                let maxScaledImageHeight = 0;
-
-                loadedImages.forEach(img => {
-                    const aspectRatio = img.width / img.height;
-                    let scaledWidth = targetImageWidthPerImage;
-                    let scaledHeight = scaledWidth / aspectRatio;
-
-                    scaledImages.push({ img: img, width: scaledWidth, height: scaledHeight });
-                    if (scaledHeight > maxScaledImageHeight) {
-                        maxScaledImageHeight = scaledHeight;
-                    }
-                });
-                totalImagesHeight = maxScaledImageHeight; // All images will be scaled to this max height
+            if (placement === 'right' && loadedImages.length > 0) {
+                // Make QR column height equal to text section so each QR rectangle aligns with text folds
+                totalImagesHeight = totalTextSectionHeight;
+            } else {
+                // original behavior: images determine height below text
+                if (loadedImages.length > 0) {
+                    const targetImageWidthPerImage = FIXED_CANVAS_WIDTH / loadedImages.length;
+                    let maxScaledImageHeight = 0;
+                    loadedImages.forEach(img => {
+                        const aspectRatio = img.width / img.height;
+                        const scaledWidth = targetImageWidthPerImage;
+                        const scaledHeight = scaledWidth / aspectRatio;
+                        if (scaledHeight > maxScaledImageHeight) maxScaledImageHeight = scaledHeight;
+                    });
+                    totalImagesHeight = maxScaledImageHeight;
+                }
             }
 
-            // Set canvas height based on text and images
-            imageCanvas.height = totalTextSectionHeight + totalImagesHeight;
+            // Set canvas height accordingly
+            // Reserve space for optional date/time below the content
+            const datePadding = 0; // distance from edges for date text
+            const dateFontSize = (currentFontSize * 0.6); // small proportional font for date
+            const dateAreaHeight = (showDateTime && showDateTime.checked) ? (dateFontSize + datePadding) : 0;
+            imageCanvas.height = totalTextSectionHeight + (placement === 'below' ? totalImagesHeight : 0) + dateAreaHeight;
 
             // Clear the canvas before redrawing
             ctx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
@@ -271,23 +299,86 @@
             // Draw the overlay text
             ctx.font = TEXT_FONT_STYLE; // Ensure font is set again before drawing
             ctx.fillStyle = 'black'; // Darker text color
-            ctx.textAlign = 'center';
             ctx.textBaseline = 'top'; // Align text to the top of the line
+            if (placement === 'right' && loadedImages.length > 0) {
+                // Left column, center text within left column
+                ctx.textAlign = 'center';
+                const leftTextX = Math.floor(leftColumnWidth / 2);
+                let currentTextY = TEXT_TOP_PADDING;
+                textLines.forEach(line => {
+                    ctx.fillText(line, leftTextX, currentTextY);
+                    currentTextY += lineHeight;
+                });
+            } else {
+                // Default: centered across full width
+                ctx.textAlign = 'center';
+                let currentTextY = TEXT_TOP_PADDING;
+                textLines.forEach(line => {
+                    ctx.fillText(line, imageCanvas.width / 2, currentTextY);
+                    currentTextY += lineHeight;
+                });
+            }
 
-            let currentTextY = TEXT_TOP_PADDING;
-            textLines.forEach(line => {
-                ctx.fillText(line, imageCanvas.width / 2, currentTextY);
-                currentTextY += lineHeight;
-            });
+            // Draw images (QRs) depending on placement
+            if (placement === 'right' && loadedImages.length > 0) {
+                // Draw QR column at right: arrange into grid with max 2 rows
+                const rows = Math.min(2, loadedImages.length);
+                const columns = Math.ceil(loadedImages.length / rows);
+                const cellWidth = Math.floor(qrColumnWidth / columns);
+                const cellHeight = Math.max(1, Math.floor(totalImagesHeight / rows));
+                // draw each image in grid: top row first, left to right, then bottom row
+                loadedImages.forEach((img, i) => {
+                    const row = Math.floor(i / columns);
+                    const col = i % columns;
+                    const rectX = leftColumnWidth + col * cellWidth;
+                    const rectY = row * cellHeight;
+                    // compute scale to fit inside cellWidth x cellHeight while preserving aspect ratio
+                    const aspectRatio = img.width / img.height;
+                    let drawWidth = cellWidth;
+                    let drawHeight = Math.floor(drawWidth / aspectRatio);
+                    if (drawHeight > cellHeight) {
+                        drawHeight = cellHeight;
+                        drawWidth = Math.floor(drawHeight * aspectRatio);
+                    }
+                    const drawX = rectX + Math.floor((cellWidth - drawWidth) / 2);
+                    const drawY = rectY + Math.floor((cellHeight - drawHeight) / 2);
+                    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+                    // faint rectangle border to show fold lines
+                    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+                    ctx.strokeRect(rectX, rectY, cellWidth, cellHeight);
+                });
+            } else {
+                 // original behavior: images laid out side-by-side under text
+                 let currentImageX = 0;
+                 const imagesYStart = totalTextSectionHeight; // Y position where images start
+                 if (loadedImages.length > 0) {
+                     const targetImageWidthPerImage = FIXED_CANVAS_WIDTH / loadedImages.length;
+                     loadedImages.forEach(img => {
+                         const aspectRatio = img.width / img.height;
+                         const scaledWidth = targetImageWidthPerImage;
+                         const scaledHeight = scaledWidth / aspectRatio;
+                         ctx.drawImage(img, currentImageX, imagesYStart, scaledWidth, totalImagesHeight);
+                         currentImageX += scaledWidth;
+                     });
+                 }
+             }
 
-            // Draw images below the text
-            let currentImageX = 0;
-            const imagesYStart = totalTextSectionHeight; // Y position where images start
-            scaledImages.forEach(item => {
-                // Draw each image side by side, scaled to fit
-                ctx.drawImage(item.img, currentImageX, imagesYStart, item.width, totalImagesHeight);
-                currentImageX += item.width;
-            });
+            // Draw date/time at bottom-right if enabled
+            if (showDateTime && showDateTime.checked) {
+                try {
+                    const now = new Date();
+                    const dateStr = now.toLocaleString();
+                    // Use the dateFontSize computed earlier, ensure it's set on the context
+                    ctx.font = `normal ${dateFontSize}px ${selectedFontFamily}`;
+                    ctx.fillStyle = 'black';
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'bottom';
+                    // Draw the date inside the reserved bottom area
+                    ctx.fillText(dateStr, imageCanvas.width - datePadding, imageCanvas.height - (datePadding / 2));
+                } catch (e) {
+                    console.error('Date draw error:', e);
+                }
+            }
         }
 
         // Handle local image file selection
@@ -301,11 +392,6 @@
             }
 
             // Check if adding these files would exceed the limit
-            if (loadedImages.length + files.length > 3) {
-                showMessage(`You can only add ${3 - loadedImages.length} more image(s).`, 'error');
-                imageUpload.value = ''; // Clear the input
-                return;
-            }
 
             files.forEach(file => {
                 const reader = new FileReader();
