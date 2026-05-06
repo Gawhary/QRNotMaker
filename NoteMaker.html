@@ -336,12 +336,12 @@
                     if (showCaptions && showCaptions.checked) {
                         loadedImages.forEach(img => {
                             const drawW = targetImageWidthPerImage;
-                            const captionFontBelow = Math.max(20, Math.floor(drawW * 0.2));
+                            const captionFontBelow = Math.max(10, Math.floor(drawW * 0.06));
                             ctx.font = `normal ${captionFontBelow}px ${selectedFontFamily}`;
                             const captionText = img.qrText || '';
-                            const captionMaxWidth = Math.max(20, Math.floor(drawW));
+                            const captionMaxWidth = Math.max(10, Math.floor(drawW - 8));
                             const lines = wrapText(ctx, captionText, captionMaxWidth);
-                            const captionHeightForImg = Math.ceil(lines.length * captionFontBelow * 1.2) + 4;
+                            const captionHeightForImg = Math.ceil(lines.length * captionFontBelow * 1.1) + 4;
                             if (captionHeightForImg > maxCaptionHeight) maxCaptionHeight = captionHeightForImg;
                         });
                     }
@@ -349,12 +349,32 @@
                  }
              }
 
+            // Precompute right-column caption band height and total extra caption area
+            let extraCaptionPerRow = 0;
+            let captionRows = 0;
+            if (placement === 'right' && loadedImages.length > 0 && showCaptions && showCaptions.checked) {
+                captionRows = Math.min(2, loadedImages.length);
+                const columnsPreview = Math.ceil(loadedImages.length / captionRows);
+                const cellWidthPreview = Math.floor((qrColumnWidth || Math.floor(FIXED_CANVAS_WIDTH/2)) / columnsPreview);
+                loadedImages.forEach(img => {
+                    const cellCaptionFont = Math.max(10, Math.floor(cellWidthPreview * 0.06));
+                    ctx.font = `normal ${cellCaptionFont}px ${selectedFontFamily}`;
+                    const capMaxWidth = Math.max(10, cellWidthPreview - 8);
+                    const lines = wrapText(ctx, img.qrText || '', capMaxWidth);
+                    const h = Math.ceil(lines.length * cellCaptionFont * 1.1) + 4;
+                    if (h > extraCaptionPerRow) extraCaptionPerRow = h;
+                });
+            }
+
             // Set canvas height accordingly
             // Reserve space for optional date/time below the content
             const datePadding = 0; // distance from edges for date text
             const dateFontSize = (currentFontSize * 0.6); // small proportional font for date
             const dateAreaHeight = (showDateTime && showDateTime.checked) ? (dateFontSize + datePadding) : 0;
-            imageCanvas.height = totalTextSectionHeight + (placement === 'below' ? totalImagesHeight : 0) + dateAreaHeight;
+
+            // Include extra caption area for right placement
+            const extraCaptionTotal = (placement === 'right' ? (extraCaptionPerRow * captionRows) : 0);
+            imageCanvas.height = totalTextSectionHeight + (placement === 'below' ? totalImagesHeight : 0) + extraCaptionTotal + dateAreaHeight;
 
             // Clear the canvas before redrawing
             ctx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
@@ -391,28 +411,18 @@
                 const rows = Math.min(2, loadedImages.length);
                 const columns = Math.ceil(loadedImages.length / rows);
                 const cellWidth = Math.floor(qrColumnWidth / columns);
-                // compute caption height per cell for right-column, so we can add reservation
-                let maxCaptionHeightRight = 0;
-                if (showCaptions && showCaptions.checked) {
-                    loadedImages.forEach(img => {
-                        const cellCaptionFont = Math.max(10, Math.floor(cellWidth * 0.06));
-                        ctx.font = `normal ${cellCaptionFont}px ${selectedFontFamily}`;
-                        const captionMaxWidth = Math.max(10, cellWidth - 8);
-                        const lines = wrapText(ctx, img.qrText || '', captionMaxWidth);
-                        const h = Math.ceil(lines.length * cellCaptionFont * 1.1) + 4;
-                        if (h > maxCaptionHeightRight) maxCaptionHeightRight = h;
-                    });
-                }
-                const cellHeight = Math.max(1, Math.floor((totalImagesHeight + maxCaptionHeightRight) / rows));
-                // draw each image in grid: top row first, left to right, then bottom row
-                loadedImages.forEach((img, i) => {
-                    const row = Math.floor(i / columns);
-                    const col = i % columns;
-                    const rectX = leftColumnWidth + col * cellWidth;
-                    const rectY = row * cellHeight;
-                    // reserve minimal space at bottom of cell for caption (only if enabled)
-                    const captionReserve = (showCaptions && showCaptions.checked) ? Math.max(12, Math.floor(cellWidth * 0.06) + 4) : 0;
-                    const imageAreaHeight = Math.max(1, cellHeight - captionReserve);
+                // compute base cell height from text section and add per-row caption reserve so captions sit inside each cell
+                const baseCellHeight = Math.max(1, Math.floor(totalTextSectionHeight / rows));
+                const captionReservePerRow = extraCaptionPerRow; // previously computed
+                const cellHeight = Math.max(1, baseCellHeight + captionReservePerRow);
+                 // draw each image in grid: top row first, left to right, then bottom row
+                 loadedImages.forEach((img, i) => {
+                     const row = Math.floor(i / columns);
+                     const col = i % columns;
+                     const rectX = leftColumnWidth + col * cellWidth;
+                     const rectY = row * cellHeight;
+                     // reserve bottom area inside the cell for caption
+                     const imageAreaHeight = Math.max(1, cellHeight - captionReservePerRow);
                      // compute scale to fit inside cellWidth x imageAreaHeight while preserving aspect ratio
                      // use natural dimensions for better scaling
                      const imgW = img.naturalWidth || img.width;
@@ -433,6 +443,7 @@
                          ctx.textBaseline = 'top';
                          const captionText = img.qrText || '';
                          const captionX = rectX + Math.floor(cellWidth / 2);
+                         // caption sits inside this cell just below its image
                          const captionY = rectY + imageAreaHeight + 2;
                          // wrap caption to fit caption area width
                          const captionMaxWidth = Math.max(10, cellWidth - 8);
@@ -509,34 +520,29 @@
                 showMessage('No valid image files selected. Please try again.', 'error');
                 return;
             }
-            // Reset loaded images
-            loadedImages = [];
-            imagePreviews.innerHTML = ''; // Clear existing previews
-            // Read and load each image file
+            // Read and load each image file and append to existing loadedImages
             const promises = imageFiles.map(file => {
-                return new Promise((resolve) => {
+                return new Promise((resolve, reject) => {
                     const img = new Image();
                     img.src = URL.createObjectURL(file);
                     img.file = file; // Store the original file reference
-                    img.onload = () => {
-                        resolve(img);
-                    };
+                    img.onload = () => resolve(img);
+                    img.onerror = (e) => reject(e);
                 });
             });
-            // Once all images are loaded, add them to the canvas
-            Promise.all(promises).then(loadedImgs => {
-                loadedImages = loadedImgs;
-                // Decode QR text for each image before rendering so captions appear
-                loadedImages.forEach(img => {
+            Promise.all(promises).then(newImgs => {
+                // append and render each new image
+                newImgs.forEach(img => {
                     try { decodeQRFromImage(img); } catch(e) { img.qrText = img.file && img.file.name ? img.file.name : ''; }
+                    loadedImages.push(img);
                     renderImagePreview(img);
                 });
                 drawCanvas();
-                showMessage(`${loadedImages.length} image(s) loaded successfully!`, 'info');
-             }).catch(err => {
-                 console.error('Error loading images:', err);
-                 showMessage('Error loading images. Please try again.', 'error');
-             });
+                showMessage(`${newImgs.length} image(s) added. Total: ${loadedImages.length}`, 'info');
+            }).catch(err => {
+                console.error('Error loading images:', err);
+                showMessage('Error loading images. Please try again.', 'error');
+            });
         });
 
         // Handle export button click
