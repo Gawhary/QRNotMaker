@@ -6,6 +6,8 @@
     <title>QR Note maker</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- QR decoding library -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <style>
         /* Custom styles for the Inter font and overall body */
         body {
@@ -94,6 +96,12 @@
                 <label for="showDateTime" class="text-gray-700 text-sm font-semibold">Include date & time (bottom-right)</label>
             </div>
 
+            <!-- Show captions checkbox -->
+            <div class="mt-2 flex items-center space-x-3">
+                <input type="checkbox" id="showCaptions" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" checked>
+                <label for="showCaptions" class="text-gray-700 text-sm font-semibold">Show text below each QR</label>
+            </div>
+
          </div>
 
          <!-- Canvas for Image Combination -->
@@ -124,10 +132,12 @@
         const fontSelect = document.getElementById('fontSelect');
         const placementSelect = document.getElementById('placementSelect');
         const showDateTime = document.getElementById('showDateTime');
+        const showCaptions = document.getElementById('showCaptions');
         const ctx = imageCanvas.getContext('2d');
 
         if (placementSelect) placementSelect.addEventListener('change', drawCanvas);
         if (showDateTime) showDateTime.addEventListener('change', drawCanvas);
+        if (showCaptions) showCaptions.addEventListener('change', drawCanvas);
         
          let loadedImages = []; // Array to store loaded image objects
 
@@ -138,6 +148,10 @@
         const TEXT_BOTTOM_PADDING = 0; // Kept at 0 as per user's request
         const TEXT_LINE_HEIGHT_FACTOR = 1.1; // Kept at 1.1 as per user's request
         const TEXT_HORIZONTAL_PADDING = 0; // Kept at 0 as per user's request
+
+        // Global defaults to avoid ReferenceError if drawCanvas runs early
+        let captionFontSize = 12;
+        let captionHeight = 20;
 
         // Function to show messages to the user
         function showMessage(message, type = 'info') {
@@ -211,6 +225,36 @@
             imagePreviews.appendChild(previewDiv);
         }
 
+        // Helper: decode QR text from an Image object using jsQR
+        function decodeQRFromImage(img) {
+            try {
+                // create temp canvas sized to image (limit size to avoid huge canvases)
+                const maxDim = 2000; // keep decoding canvas reasonable
+                const w = img.naturalWidth || img.width;
+                const h = img.naturalHeight || img.height;
+                let sw = w, sh = h;
+                if (w > maxDim || h > maxDim) {
+                    const scale = Math.min(maxDim / w, maxDim / h);
+                    sw = Math.floor(w * scale);
+                    sh = Math.floor(h * scale);
+                }
+                const temp = document.createElement('canvas');
+                temp.width = sw;
+                temp.height = sh;
+                const tctx = temp.getContext('2d');
+                tctx.drawImage(img, 0, 0, sw, sh);
+                const imageData = tctx.getImageData(0, 0, sw, sh);
+                const code = jsQR(imageData.data, sw, sh);
+                if (code && code.data) {
+                    img.qrText = code.data;
+                } else {
+                    img.qrText = img.file && img.file.name ? img.file.name : '';
+                }
+            } catch (e) {
+                img.qrText = img.file && img.file.name ? img.file.name : '';
+            }
+        }
+
         // Function to remove an image
         function removeImage(imgToRemove) {
             loadedImages = loadedImages.filter(img => img !== imgToRemove); // Filter out the image
@@ -223,6 +267,8 @@
         // Function to add an image (from file)
         function addImageToCanvas(img) {
             // No hard limit: allow more than 3 images (QR layout will handle multiple images when placed on the right)
+            // decode QR text into img.qrText, then store
+            decodeQRFromImage(img);
             loadedImages.push(img);
              renderImagePreview(img); // Render the new image preview
              drawCanvas(); // Redraw canvas with new image
@@ -249,14 +295,18 @@
             const textToDraw = overlayText.value.trim();
             const lineHeight = currentFontSize * TEXT_LINE_HEIGHT_FACTOR;
 
-            // When QRs are to the right, reserve a right column and wrap text to the left column.
-            let leftColumnWidth = FIXED_CANVAS_WIDTH;
-            let qrColumnWidth = 0;
-            if (placement === 'right' && loadedImages.length > 0) {
-                // Make QR column width equal to the text box width by splitting canvas into two equal columns
-                leftColumnWidth = Math.floor(FIXED_CANVAS_WIDTH / 2);
-                qrColumnWidth = FIXED_CANVAS_WIDTH - leftColumnWidth;
-            }
+            // caption size under each QR image
+            const captionFontSizeBase = Math.max(12, Math.floor(currentFontSize * 0.12));
+            // captionHeight for below-layout will be computed based on per-image width later
+ 
+             // When QRs are to the right, reserve a right column and wrap text to the left column.
+             let leftColumnWidth = FIXED_CANVAS_WIDTH;
+             let qrColumnWidth = 0;
+             if (placement === 'right' && loadedImages.length > 0) {
+                 // Make QR column width equal to the text box width by splitting canvas into two equal columns
+                 leftColumnWidth = Math.floor(FIXED_CANVAS_WIDTH / 2);
+                 qrColumnWidth = FIXED_CANVAS_WIDTH - leftColumnWidth;
+             }
 
             const maxTextWidth = leftColumnWidth - (2 * TEXT_HORIZONTAL_PADDING);
             const textLines = wrapText(ctx, textToDraw, Math.max(10, maxTextWidth));
@@ -273,15 +323,31 @@
                 if (loadedImages.length > 0) {
                     const targetImageWidthPerImage = FIXED_CANVAS_WIDTH / loadedImages.length;
                     let maxScaledImageHeight = 0;
+                    // compute max image height when scaled to target width
                     loadedImages.forEach(img => {
-                        const aspectRatio = img.width / img.height;
+                        const imgW = img.naturalWidth || img.width;
+                        const imgH = img.naturalHeight || img.height;
                         const scaledWidth = targetImageWidthPerImage;
-                        const scaledHeight = scaledWidth / aspectRatio;
+                        const scaledHeight = Math.floor(scaledWidth * (imgH / imgW));
                         if (scaledHeight > maxScaledImageHeight) maxScaledImageHeight = scaledHeight;
                     });
-                    totalImagesHeight = maxScaledImageHeight;
-                }
-            }
+                    // if captions enabled, compute maximum caption height across images (based on wrapped lines)
+                    let maxCaptionHeight = 0;
+                    if (showCaptions && showCaptions.checked) {
+                        loadedImages.forEach(img => {
+                            const drawW = targetImageWidthPerImage;
+                            const captionFontBelow = Math.max(20, Math.floor(drawW * 0.2));
+                            ctx.font = `normal ${captionFontBelow}px ${selectedFontFamily}`;
+                            const captionText = img.qrText || '';
+                            const captionMaxWidth = Math.max(20, Math.floor(drawW));
+                            const lines = wrapText(ctx, captionText, captionMaxWidth);
+                            const captionHeightForImg = Math.ceil(lines.length * captionFontBelow * 1.2) + 4;
+                            if (captionHeightForImg > maxCaptionHeight) maxCaptionHeight = captionHeightForImg;
+                        });
+                    }
+                    totalImagesHeight = maxScaledImageHeight + maxCaptionHeight;
+                 }
+             }
 
             // Set canvas height accordingly
             // Reserve space for optional date/time below the content
@@ -325,27 +391,60 @@
                 const rows = Math.min(2, loadedImages.length);
                 const columns = Math.ceil(loadedImages.length / rows);
                 const cellWidth = Math.floor(qrColumnWidth / columns);
-                const cellHeight = Math.max(1, Math.floor(totalImagesHeight / rows));
+                // compute caption height per cell for right-column, so we can add reservation
+                let maxCaptionHeightRight = 0;
+                if (showCaptions && showCaptions.checked) {
+                    loadedImages.forEach(img => {
+                        const cellCaptionFont = Math.max(10, Math.floor(cellWidth * 0.06));
+                        ctx.font = `normal ${cellCaptionFont}px ${selectedFontFamily}`;
+                        const captionMaxWidth = Math.max(10, cellWidth - 8);
+                        const lines = wrapText(ctx, img.qrText || '', captionMaxWidth);
+                        const h = Math.ceil(lines.length * cellCaptionFont * 1.1) + 4;
+                        if (h > maxCaptionHeightRight) maxCaptionHeightRight = h;
+                    });
+                }
+                const cellHeight = Math.max(1, Math.floor((totalImagesHeight + maxCaptionHeightRight) / rows));
                 // draw each image in grid: top row first, left to right, then bottom row
                 loadedImages.forEach((img, i) => {
                     const row = Math.floor(i / columns);
                     const col = i % columns;
                     const rectX = leftColumnWidth + col * cellWidth;
                     const rectY = row * cellHeight;
-                    // compute scale to fit inside cellWidth x cellHeight while preserving aspect ratio
-                    const aspectRatio = img.width / img.height;
-                    let drawWidth = cellWidth;
-                    let drawHeight = Math.floor(drawWidth / aspectRatio);
-                    if (drawHeight > cellHeight) {
-                        drawHeight = cellHeight;
-                        drawWidth = Math.floor(drawHeight * aspectRatio);
-                    }
-                    const drawX = rectX + Math.floor((cellWidth - drawWidth) / 2);
-                    const drawY = rectY + Math.floor((cellHeight - drawHeight) / 2);
-                    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-                    // faint rectangle border to show fold lines
-                    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-                    ctx.strokeRect(rectX, rectY, cellWidth, cellHeight);
+                    // reserve minimal space at bottom of cell for caption (only if enabled)
+                    const captionReserve = (showCaptions && showCaptions.checked) ? Math.max(12, Math.floor(cellWidth * 0.06) + 4) : 0;
+                    const imageAreaHeight = Math.max(1, cellHeight - captionReserve);
+                     // compute scale to fit inside cellWidth x imageAreaHeight while preserving aspect ratio
+                     // use natural dimensions for better scaling
+                     const imgW = img.naturalWidth || img.width;
+                     const imgH = img.naturalHeight || img.height;
+                     const scale = Math.min(cellWidth / imgW, imageAreaHeight / imgH);
+                     let drawWidth = Math.max(1, Math.floor(imgW * scale));
+                     let drawHeight = Math.max(1, Math.floor(imgH * scale));
+                     // center in cell
+                     const drawX = rectX + Math.floor((cellWidth - drawWidth) / 2);
+                     const drawY = rectY + Math.floor((imageAreaHeight - drawHeight) / 2);
+                     ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+                     // draw caption if enabled
+                     if (showCaptions && showCaptions.checked) {
+                         const cellCaptionFont = Math.max(10, Math.floor(cellWidth * 0.06));
+                         ctx.font = `normal ${cellCaptionFont}px ${selectedFontFamily}`;
+                         ctx.fillStyle = 'black';
+                         ctx.textAlign = 'center';
+                         ctx.textBaseline = 'top';
+                         const captionText = img.qrText || '';
+                         const captionX = rectX + Math.floor(cellWidth / 2);
+                         const captionY = rectY + imageAreaHeight + 2;
+                         // wrap caption to fit caption area width
+                         const captionMaxWidth = Math.max(10, cellWidth - 8);
+                         const captionLines = wrapText(ctx, captionText, captionMaxWidth);
+                         const captionLineHeight = cellCaptionFont * 1.1;
+                         for (let li = 0; li < captionLines.length; li++) {
+                             ctx.fillText(captionLines[li], captionX, captionY + li * captionLineHeight);
+                         }
+                     }
+                     // faint rectangle border to show fold lines
+                     ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+                     ctx.strokeRect(rectX, rectY, cellWidth, cellHeight);
                 });
             } else {
                  // original behavior: images laid out side-by-side under text
@@ -355,118 +454,120 @@
                      const targetImageWidthPerImage = FIXED_CANVAS_WIDTH / loadedImages.length;
                      loadedImages.forEach(img => {
                          const aspectRatio = img.width / img.height;
-                         const scaledWidth = targetImageWidthPerImage;
-                         const scaledHeight = scaledWidth / aspectRatio;
-                         ctx.drawImage(img, currentImageX, imagesYStart, scaledWidth, totalImagesHeight);
-                         currentImageX += scaledWidth;
+                         const imgW = img.naturalWidth || img.width;
+                         const imgH = img.naturalHeight || img.height;
+                         const targetW = targetImageWidthPerImage;
+                         const scale = Math.min(targetW / imgW, targetW / imgW);
+                         const drawWidth = Math.max(1, Math.floor(imgW * scale));
+                         const drawHeight = Math.max(1, Math.floor(imgH * scale));
+                         const imageDrawHeight = drawHeight;
+                         ctx.drawImage(img, currentImageX, imagesYStart, drawWidth, imageDrawHeight);
+                         // draw caption below images if enabled
+                         if (showCaptions && showCaptions.checked) {
+                             const captionFontBelow = Math.max(10, Math.floor(drawWidth * 0.06));
+                             ctx.font = `normal ${captionFontBelow}px ${selectedFontFamily}`;
+                             ctx.fillStyle = 'black';
+                             ctx.textAlign = 'center';
+                             ctx.textBaseline = 'top';
+                             const captionText = img.qrText || '';
+                             const captionX = currentImageX + Math.floor(drawWidth / 2);
+                             const captionY = imagesYStart + imageDrawHeight + 2;
+                             const captionMaxWidthBelow = Math.max(10, Math.floor(drawWidth - 8));
+                             const captionLinesBelow = wrapText(ctx, captionText, captionMaxWidthBelow);
+                             const captionLineHeight = captionFontBelow * 1.1;
+                             for (let li = 0; li < captionLinesBelow.length; li++) {
+                                 ctx.fillText(captionLinesBelow[li], captionX, captionY + li * captionLineHeight);
+                             }
+                         }
+                         currentImageX += drawWidth;
                      });
                  }
-             }
 
-            // Draw date/time at bottom-right if enabled
+            }
+
+            // Optionally draw the date/time text at the bottom-right
             if (showDateTime && showDateTime.checked) {
-                try {
-                    const now = new Date();
-                    const dateStr = now.toLocaleString();
-                    // Use the dateFontSize computed earlier, ensure it's set on the context
-                    ctx.font = `normal ${dateFontSize}px ${selectedFontFamily}`;
-                    ctx.fillStyle = 'black';
-                    ctx.textAlign = 'right';
-                    ctx.textBaseline = 'bottom';
-                    // Draw the date inside the reserved bottom area
-                    ctx.fillText(dateStr, imageCanvas.width - datePadding, imageCanvas.height - (datePadding / 2));
-                } catch (e) {
-                    console.error('Date draw error:', e);
-                }
+                ctx.font = `normal ${dateFontSize}px ${selectedFontFamily}`;
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'top';
+                const dateText = new Date().toLocaleString(); // Local date/time
+                const dateX = imageCanvas.width - datePadding;
+                const dateY = imageCanvas.height - datePadding - dateAreaHeight;
+                ctx.fillText(dateText, dateX, dateY);
             }
         }
 
-        // Handle local image file selection
+        // Initial message to user
+        showMessage('Welcome to QR Note Maker! Add images and customize your note.', 'info');
+
+        // Handle image file selection
         imageUpload.addEventListener('change', (event) => {
             const files = Array.from(event.target.files);
-            let filesAddedCount = 0;
-
-            if (files.length === 0) {
-                showMessage('No local files selected.', 'info');
+            const imageFiles = files.filter(file => file.type.startsWith('image/'));
+            if (imageFiles.length === 0) {
+                showMessage('No valid image files selected. Please try again.', 'error');
                 return;
             }
-
-            // Check if adding these files would exceed the limit
-
-            files.forEach(file => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
+            // Reset loaded images
+            loadedImages = [];
+            imagePreviews.innerHTML = ''; // Clear existing previews
+            // Read and load each image file
+            const promises = imageFiles.map(file => {
+                return new Promise((resolve) => {
                     const img = new Image();
+                    img.src = URL.createObjectURL(file);
+                    img.file = file; // Store the original file reference
                     img.onload = () => {
-                        if (addImageToCanvas(img)) { // Only add if limit allows
-                            filesAddedCount++;
-                            // No need to sort here, addImageToCanvas redraws
-                        }
+                        resolve(img);
                     };
-                    img.onerror = () => {
-                        showMessage(`Could not load image: ${file.name}`, 'error');
-                    };
-                    img.file = file; // Store file reference if needed later
-                    img.src = e.target.result;
-                };
-                reader.onerror = () => {
-                    showMessage(`Error reading file: ${file.name}`, 'error');
-                };
-                reader.readAsDataURL(file);
+                });
             });
-            imageUpload.value = ''; // Clear the input after processing files
+            // Once all images are loaded, add them to the canvas
+            Promise.all(promises).then(loadedImgs => {
+                loadedImages = loadedImgs;
+                // Decode QR text for each image before rendering so captions appear
+                loadedImages.forEach(img => {
+                    try { decodeQRFromImage(img); } catch(e) { img.qrText = img.file && img.file.name ? img.file.name : ''; }
+                    renderImagePreview(img);
+                });
+                drawCanvas();
+                showMessage(`${loadedImages.length} image(s) loaded successfully!`, 'info');
+             }).catch(err => {
+                 console.error('Error loading images:', err);
+                 showMessage('Error loading images. Please try again.', 'error');
+             });
         });
 
-        // Redraw canvas when text changes
-        overlayText.addEventListener('input', drawCanvas);
-
-        // Redraw canvas when font size slider changes
-        fontSizeSlider.addEventListener('input', drawCanvas);
-
-        // Redraw canvas when font selection changes
-        fontSelect.addEventListener('change', drawCanvas);
-
-        // Export combined image
+        // Handle export button click
         exportButton.addEventListener('click', () => {
-            // Removed the condition that prevented export if no images were loaded
-            // Now, it will export text-only if no images are present.
-
-            try {
-                // Create a temporary canvas for export to ensure correct dimensions and content
-                const exportCanvas = document.createElement('canvas');
-                const exportCtx = exportCanvas.getContext('2d');
-
-                // Set export canvas dimensions to match the display canvas
-                exportCanvas.width = imageCanvas.width;
-                exportCanvas.height = imageCanvas.height;
-
-                // Copy the content from the display canvas to the export canvas
-                exportCtx.drawImage(imageCanvas, 0, 0);
-
-                const imageURL = exportCanvas.toDataURL('image/png');
-                console.log('Generated image URL length:', imageURL.length);
-
-                const downloadLink = document.createElement('a');
-                downloadLink.href = imageURL;
-                downloadLink.download = 'qr_note.png'; // Suggested filename
-                document.body.appendChild(downloadLink);
-                downloadLink.click();
-                document.body.removeChild(downloadLink);
-
-                showMessage('Image exported successfully!', 'success');
-            } catch (error) {
-                showMessage(`Error exporting image: ${error.message}`, 'error');
-                console.error('Export error:', error);
+            // Temporarily hide the message box if visible
+            const wasMessageBoxVisible = !messageBox.classList.contains('hidden');
+            if (wasMessageBoxVisible) {
+                messageBox.classList.add('hidden');
             }
+
+            // Convert the canvas to a data URL (PNG format)
+            const imageData = imageCanvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.href = imageData;
+            link.download = 'qr_note.png';
+            // Trigger the download by programmatically clicking the link
+            link.click();
+
+            // Clean up and show success message
+            link.remove();
+            setTimeout(() => {
+                // Show the message box again if it was visible before
+                if (wasMessageBoxVisible) {
+                    messageBox.classList.remove('hidden');
+                }
+                showMessage('Image exported successfully!', 'info');
+            }, 100);
         });
 
-        // Initial draw on page load
-        window.onload = () => {
-            drawCanvas();
-        };
-
-        // Redraw canvas on window resize to ensure responsiveness (though internal drawing is fixed width)
-        window.addEventListener('resize', drawCanvas);
+        // Initial canvas draw
+        drawCanvas();
     </script>
 </body>
 </html>
