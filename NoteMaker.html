@@ -138,6 +138,9 @@
         if (placementSelect) placementSelect.addEventListener('change', drawCanvas);
         if (showDateTime) showDateTime.addEventListener('change', drawCanvas);
         if (showCaptions) showCaptions.addEventListener('change', drawCanvas);
+        if (fontSizeSlider) fontSizeSlider.addEventListener('input', drawCanvas);
+        if (fontSelect) fontSelect.addEventListener('change', drawCanvas);
+        if (overlayText) overlayText.addEventListener('input', drawCanvas);
         
          let loadedImages = []; // Array to store loaded image objects
 
