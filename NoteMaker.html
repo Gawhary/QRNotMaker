@@ -375,9 +375,12 @@
             const dateFontSize = (currentFontSize * 0.4); // small proportional font for date
             const dateAreaHeight = (showDateTime && showDateTime.checked) ? (dateFontSize + datePadding) : 0;
 
+            // Small extra spacing between content and footer (date/time)
+            const FOOTER_SPACING = 12; // pixels
+
             // Include extra caption area for right placement
             const extraCaptionTotal = (placement === 'right' ? (extraCaptionPerRow * captionRows) : 0);
-            imageCanvas.height = totalTextSectionHeight + (placement === 'below' ? totalImagesHeight : 0) + extraCaptionTotal + dateAreaHeight;
+            imageCanvas.height = totalTextSectionHeight + (placement === 'below' ? totalImagesHeight : 0) + extraCaptionTotal + dateAreaHeight + FOOTER_SPACING;
 
             // Clear the canvas before redrawing
             ctx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
