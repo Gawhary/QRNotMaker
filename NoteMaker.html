@@ -286,7 +286,10 @@
 
             // Get current font family from dropdown
             const selectedFontFamily = fontSelect.value;
+            // Use a consistent small-print font for captions and date regardless of selected note font
+            const SMALL_PRINT_FONT = 'Verdana, sans-serif';
             const placement = placementSelect ? placementSelect.value : 'below';
+            const SMALL_PRINT_RATIO = 1.1;
 
             // Set fixed canvas width
             imageCanvas.width = FIXED_CANVAS_WIDTH;
@@ -339,8 +342,9 @@
                     if (showCaptions && showCaptions.checked) {
                         loadedImages.forEach(img => {
                             const drawW = targetImageWidthPerImage;
-                            const captionFontBelow = Math.max(10, Math.floor(drawW * 0.06));
-                            ctx.font = `normal ${captionFontBelow}px ${selectedFontFamily}`;
+                            // increase caption base size and use small-print font
+                            const captionFontBelow = Math.max(10, Math.floor(drawW * 0.06 * SMALL_PRINT_RATIO));
+                            ctx.font = `normal ${captionFontBelow}px ${SMALL_PRINT_FONT}`;
                             const captionText = img.qrText || '';
                             const captionMaxWidth = Math.max(10, Math.floor(drawW - 8));
                             const lines = wrapText(ctx, captionText, captionMaxWidth);
@@ -360,19 +364,21 @@
                 const columnsPreview = Math.ceil(loadedImages.length / captionRows);
                 const cellWidthPreview = Math.floor((qrColumnWidth || Math.floor(FIXED_CANVAS_WIDTH/2)) / columnsPreview);
                 loadedImages.forEach(img => {
-                    const cellCaptionFont = Math.max(10, Math.floor(cellWidthPreview * 0.06));
-                    ctx.font = `normal ${cellCaptionFont}px ${selectedFontFamily}`;
-                    const capMaxWidth = Math.max(10, cellWidthPreview - 8);
-                    const lines = wrapText(ctx, img.qrText || '', capMaxWidth);
-                    const h = Math.ceil(lines.length * cellCaptionFont * 1.1) + 4;
-                    if (h > extraCaptionPerRow) extraCaptionPerRow = h;
-                });
+                    // increase caption size and use small-print font
+                     const cellCaptionFont = Math.max(10, Math.floor(cellWidthPreview * 0.06 * SMALL_PRINT_RATIO));
+                     ctx.font = `normal ${cellCaptionFont}px ${SMALL_PRINT_FONT}`;
+                     const capMaxWidth = Math.max(10, cellWidthPreview - 8);
+                     const lines = wrapText(ctx, img.qrText || '', capMaxWidth);
+                     const h = Math.ceil(lines.length * cellCaptionFont * 1.1) + 4;
+                     if (h > extraCaptionPerRow) extraCaptionPerRow = h;
+                 });
             }
 
             // Set canvas height accordingly
             // Reserve space for optional date/time below the content
             const datePadding = 0; // distance from edges for date text
-            const dateFontSize = (currentFontSize * 0.4); // small proportional font for date
+            // increase date font and use small-print font
+            const dateFontSize = (currentFontSize * 0.4 * SMALL_PRINT_RATIO); // small proportional font for date
             const dateAreaHeight = (showDateTime && showDateTime.checked) ? (dateFontSize + datePadding) : 0;
 
             // Small extra spacing between content and footer (date/time)
@@ -442,8 +448,9 @@
                      ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
                      // draw caption if enabled
                      if (showCaptions && showCaptions.checked) {
-                         const cellCaptionFont = Math.max(10, Math.floor(cellWidth * 0.06));
-                         ctx.font = `normal ${cellCaptionFont}px ${selectedFontFamily}`;
+                         // increase caption size and use small-print font
+                         const cellCaptionFont = Math.max(10, Math.floor(cellWidth * 0.06 * SMALL_PRINT_RATIO));
+                         ctx.font = `normal ${cellCaptionFont}px ${SMALL_PRINT_FONT}`;
                          ctx.fillStyle = 'black';
                          ctx.textAlign = 'center';
                          ctx.textBaseline = 'top';
@@ -481,8 +488,9 @@
                          ctx.drawImage(img, currentImageX, imagesYStart, drawWidth, imageDrawHeight);
                          // draw caption below images if enabled
                          if (showCaptions && showCaptions.checked) {
-                             const captionFontBelow = Math.max(10, Math.floor(drawWidth * 0.06));
-                             ctx.font = `normal ${captionFontBelow}px ${selectedFontFamily}`;
+                             // increase caption font and use small-print font
+                             const captionFontBelow = Math.max(10, Math.floor(drawWidth * 0.06 * SMALL_PRINT_RATIO));
+                             ctx.font = `normal ${captionFontBelow}px ${SMALL_PRINT_FONT}`;
                              ctx.fillStyle = 'black';
                              ctx.textAlign = 'center';
                              ctx.textBaseline = 'top';
@@ -504,7 +512,7 @@
 
             // Optionally draw the date/time text at the bottom-right
             if (showDateTime && showDateTime.checked) {
-                ctx.font = `normal ${dateFontSize}px ${selectedFontFamily}`;
+                ctx.font = `normal ${Math.max(10, Math.floor(dateFontSize))}px ${SMALL_PRINT_FONT}`;
                 ctx.fillStyle = 'black';
                 ctx.textAlign = 'right';
                 ctx.textBaseline = 'top';
