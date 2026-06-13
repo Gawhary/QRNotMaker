@@ -107,6 +107,16 @@
          <!-- Canvas for Image Combination -->
          <canvas id="imageCanvas" class="w-full h-auto rounded-lg shadow-md"></canvas>
 
+         <!-- Export Format Selector -->
+         <div class="w-full">
+            <label for="exportModeSelect" class="block text-gray-700 text-sm font-semibold mb-2">Export Format:</label>
+            <select id="exportModeSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 ease-in-out">
+                <option value="single">Single Note (Thermal)</option>
+                <option value="a4-3x5">A4 Sheet - 3 columns × 5 rows</option>
+                <option value="a4-2x4">A4 Sheet - 2 columns × 4 rows</option>
+            </select>
+         </div>
+
          <!-- Export Button -->
          <button id="exportButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
             Export Combined Image
@@ -133,6 +143,7 @@
         const placementSelect = document.getElementById('placementSelect');
         const showDateTime = document.getElementById('showDateTime');
         const showCaptions = document.getElementById('showCaptions');
+        const exportModeSelect = document.getElementById('exportModeSelect');
         const ctx = imageCanvas.getContext('2d');
 
         if (placementSelect) placementSelect.addEventListener('change', drawCanvas);
@@ -559,6 +570,49 @@
             });
         });
 
+        function downloadDataUrl(dataUrl, filename) {
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = filename;
+            link.click();
+            link.remove();
+        }
+
+        function createA4SheetImage(noteImage, cols, rows) {
+            const A4_WIDTH = 2480;
+            const A4_HEIGHT = 3508;
+            const pageCanvas = document.createElement('canvas');
+            pageCanvas.width = A4_WIDTH;
+            pageCanvas.height = A4_HEIGHT;
+            const pageCtx = pageCanvas.getContext('2d');
+            pageCtx.fillStyle = '#ffffff';
+            pageCtx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+
+            const marginX = 80;
+            const marginY = 80;
+            const spacingX = 40;
+            const spacingY = 40;
+            const totalSpacingX = spacingX * (cols - 1);
+            const totalSpacingY = spacingY * (rows - 1);
+            const availableWidth = A4_WIDTH - marginX * 2 - totalSpacingX;
+            const availableHeight = A4_HEIGHT - marginY * 2 - totalSpacingY;
+            const cellWidth = Math.floor(availableWidth / cols);
+            const cellHeight = Math.floor(availableHeight / rows);
+            const scale = Math.min(cellWidth / noteImage.width, cellHeight / noteImage.height);
+            const drawWidth = Math.floor(noteImage.width * scale);
+            const drawHeight = Math.floor(noteImage.height * scale);
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const cellX = marginX + col * (cellWidth + spacingX) + Math.floor((cellWidth - drawWidth) / 2);
+                    const cellY = marginY + row * (cellHeight + spacingY) + Math.floor((cellHeight - drawHeight) / 2);
+                    pageCtx.drawImage(noteImage, cellX, cellY, drawWidth, drawHeight);
+                }
+            }
+
+            return pageCanvas.toDataURL('image/png');
+        }
+
         // Handle export button click
         exportButton.addEventListener('click', () => {
             // Temporarily hide the message box if visible
@@ -567,23 +621,42 @@
                 messageBox.classList.add('hidden');
             }
 
-            // Convert the canvas to a data URL (PNG format)
+            const exportMode = exportModeSelect ? exportModeSelect.value : 'single';
             const imageData = imageCanvas.toDataURL('image/png');
-            const link = document.createElement('a');
-            link.href = imageData;
-            link.download = 'qr_note.png';
-            // Trigger the download by programmatically clicking the link
-            link.click();
 
-            // Clean up and show success message
-            link.remove();
-            setTimeout(() => {
-                // Show the message box again if it was visible before
-                if (wasMessageBoxVisible) {
-                    messageBox.classList.remove('hidden');
+            if (exportMode === 'single') {
+                downloadDataUrl(imageData, 'qr_note.png');
+                setTimeout(() => {
+                    if (wasMessageBoxVisible) {
+                        messageBox.classList.remove('hidden');
+                    }
+                    showMessage('Image exported successfully!', 'info');
+                }, 100);
+                return;
+            }
+
+            const noteImage = new Image();
+            noteImage.onload = () => {
+                let exportDataUrl;
+                let filename = 'qr_note_a4.png';
+                if (exportMode === 'a4-3x5') {
+                    exportDataUrl = createA4SheetImage(noteImage, 3, 5);
+                    filename = 'qr_note_a4_3x5.png';
+                } else if (exportMode === 'a4-2x4') {
+                    exportDataUrl = createA4SheetImage(noteImage, 2, 4);
+                    filename = 'qr_note_a4_2x4.png';
+                } else {
+                    exportDataUrl = imageData;
                 }
-                showMessage('Image exported successfully!', 'info');
-            }, 100);
+                downloadDataUrl(exportDataUrl, filename);
+                setTimeout(() => {
+                    if (wasMessageBoxVisible) {
+                        messageBox.classList.remove('hidden');
+                    }
+                    showMessage('A4 sheet exported successfully!', 'info');
+                }, 100);
+            };
+            noteImage.src = imageData;
         });
 
         // Initial canvas draw
